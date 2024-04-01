@@ -1,5 +1,6 @@
-#define pr_fmt(fmt) "vhcd " fmt
+#define pr_fmt(fmt) "vhcd:" fmt
 
+#include <linux/device.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
@@ -11,6 +12,7 @@
 /* This is the sturcture which will be referenced by usb_hcd->hcd_priv
  * as private data */
 struct vhcd_hcd_priv {
+    spinlock_t lock;
     struct vhcd_data *data;
 };
 
@@ -18,6 +20,12 @@ static inline struct usb_hcd *priv_to_hcd(struct vhcd_hcd_priv *hcd_priv)
 {
     return container_of((void *) hcd_priv, struct usb_hcd, hcd_priv);
 }
+
+static inline struct vhcd_hcd_priv *hcd_to_priv(struct usb_hcd *hcd)
+{
+    return (struct vhcd_hcd_priv *) (hcd->hcd_priv);
+}
+
 
 /* This is the structure which will be referenced by
  * platform_device->dev.platform_data, which is registered by
@@ -71,22 +79,54 @@ static void vhcd_stop(struct usb_hcd *hcd)
 
 int vhcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flags)
 {
+    pr_info("URB enqueue\n");
     return 0;
 }
 
 int vhcd_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 {
+    pr_info("URB dequeue\n");
     return 0;
 }
 
 int vhcd_h_get_frame(struct usb_hcd *hcd)
 {
+    pr_info("get frame\n");
     return 0;
 }
 
 int vhcd_hub_status(struct usb_hcd *hcd, char *buf)
 {
+    pr_info("hub status\n");
     return 0;
+}
+
+static inline void hub_descriptor(struct usb_hub_descriptor *desc)
+{
+    memset(desc, 0, sizeof(struct usb_hub_descriptor));
+
+    /* Number of bytes in this descriptor. Including 7 bytes basic
+     * with 2 bytes extra(DeviceRemovable) */
+    desc->bDescLength = 7 + 2;
+    /* Descriptor Type: hub */
+    desc->bDescriptorType = USB_DT_HUB;
+    /* Number of downstream facing ports that this hub supports */
+    desc->bNbrPorts = 1;
+    /* All ports power control at once */
+    desc->wHubCharacteristics |= cpu_to_le16(HUB_CHAR_COMMON_LPSM);
+    /* All ports Over-Current reporting */
+    desc->wHubCharacteristics |= cpu_to_le16(HUB_CHAR_COMMON_OCPM);
+    /* How long to wait before accessing a powered-on port.For a hub
+     * with no power switches, bPwrOn2PwrGood must be set to zero. */
+    desc->bPwrOn2PwrGood = 0;
+    /* Maximum current requirements of the Hub Controller electronics
+     * in mA */
+    desc->bHubContrCurrent = 0;
+    /* The bitmaps that indicate if a port has a removable device attached.
+     * 0 for removable and 1 for non-removable. */
+    desc->u.hs.DeviceRemovable[0] = 0;
+    /* usb 1.0 legacy PortPwrCtrlMask */
+    desc->u.hs.DeviceRemovable[1] = 0xff;
 }
 
 int vhcd_hub_control(struct usb_hcd *hcd,
@@ -96,16 +136,45 @@ int vhcd_hub_control(struct usb_hcd *hcd,
                      char *buf,
                      u16 wLength)
 {
-    return 0;
+    int ret = 0;
+    struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
+    unsigned long flags;
+
+    pr_info("hub ctl\n");
+
+    if (!HCD_HW_ACCESSIBLE(hcd))
+        return -ETIMEDOUT;
+
+    spin_lock_irqsave(&priv->lock, flags);
+    switch (typeReq) {
+    case GetHubDescriptor:
+        pr_debug("GetHubDescriptor\n");
+        hub_descriptor((struct usb_hub_descriptor *) buf);
+        break;
+    case GetHubStatus:
+        pr_debug("GetHubStatus\n");
+        /* TODO */
+        break;
+    default:
+        pr_info("hub control req%04x v%04x i%04x l%d\n", typeReq, wValue,
+                wIndex, wLength);
+        ret = -EPIPE;
+        break;
+    }
+    spin_unlock_irqrestore(&priv->lock, flags);
+
+    return ret;
 }
 
 int vhcd_bus_suspend(struct usb_hcd *)
 {
+    pr_info("bus suspend\n");
     return 0;
 }
 
 int vhcd_bus_resume(struct usb_hcd *)
 {
+    pr_info("bus resume\n");
     return 0;
 }
 
@@ -116,6 +185,7 @@ int vhcd_alloc_streams(struct usb_hcd *hcd,
                        unsigned int num_streams,
                        gfp_t mem_flags)
 {
+    pr_info("alloc streams\n");
     return 0;
 }
 
@@ -125,6 +195,7 @@ int vhcd_free_streams(struct usb_hcd *hcd,
                       unsigned int num_eps,
                       gfp_t mem_flags)
 {
+    pr_info("free streams\n");
     return 0;
 }
 
@@ -237,7 +308,7 @@ static int __init hcd_init(void)
     if (ret < 0)
         goto err_register_hcd_driver;
 
-    pr_info("Initialize vhcd: %d\n", ret);
+    pr_info("Initialize vhcd = %d\n", ret);
     return ret;
 
 err_register_hcd_driver:
@@ -254,8 +325,8 @@ module_init(hcd_init);
 static void __exit hcd_exit(void)
 {
     struct vhcd_data *data = get_platdata(&vhcd_pdev);
-    kfree(data);
     platform_device_unregister(&vhcd_pdev);
+    kfree(data);
     platform_driver_unregister(&vhcd_driver);
     pr_info("Exit vhcd\n");
 }
