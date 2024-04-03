@@ -9,11 +9,21 @@
 
 #define DEV_NAME "vhcd"
 
+enum roothub_state {
+    RH_RESET,
+    RH_SUSPENDED,
+    RH_RUNNING
+};
+
 /* This is the sturcture which will be referenced by usb_hcd->hcd_priv
  * as private data */
 struct vhcd_hcd_priv {
     spinlock_t lock;
     struct vhcd_data *data;
+
+    enum roothub_state rh_state;
+    struct usb_port_status port_status;
+    int active;
 };
 
 static inline struct usb_hcd *priv_to_hcd(struct vhcd_hcd_priv *hcd_priv)
@@ -26,6 +36,36 @@ static inline struct vhcd_hcd_priv *hcd_to_priv(struct usb_hcd *hcd)
     return (struct vhcd_hcd_priv *) (hcd->hcd_priv);
 }
 
+static inline void hcd_priv_init(struct vhcd_hcd_priv *priv, struct vhcd_data *data)
+{
+    spin_lock_init(&priv->lock);
+    priv->data = data;
+    priv->rh_state = RH_RESET;
+    priv->port_status = (struct usb_port_status) {
+        .wPortStatus = 0,
+        .wPortChange = 0,
+    };
+    priv->active = 0;
+}
+
+static void set_link_state(struct vhcd_hcd_priv *priv)
+    __must_hold(&priv->lock)
+{
+    /* Record status and active, so we can compare the changes for them. */
+    struct usb_port_status port_status_old = priv->port_status;
+    int active_old = priv->active;
+
+    if (priv->port_status.wPortStatus & USB_PORT_STAT_POWER) {
+        /* A device is present on this port */
+        priv->port_status.wPortStatus |= USB_PORT_STAT_CONNECTION;
+
+        /* The port status change from disconnect to connect. */
+        if (!(port_status_old.wPortStatus & USB_PORT_STAT_CONNECTION))
+            priv->port_status.wPortChange |= USB_PORT_STAT_C_CONNECTION;
+
+        priv->active = 1;
+    }
+}
 
 /* This is the structure which will be referenced by
  * platform_device->dev.platform_data, which is registered by
@@ -57,7 +97,7 @@ static int vhcd_setup(struct usb_hcd *hcd)
     hcd->self.sg_tablesize = ~0;
 
     data->hs_hcd_priv = (struct vhcd_hcd_priv *) (hcd->hcd_priv);
-    data->hs_hcd_priv->data = data;
+    hcd_priv_init(data->hs_hcd_priv, data);
 
     hcd->speed = HCD_USB2;
     hcd->self.root_hub->speed = USB_SPEED_HIGH;
@@ -67,8 +107,13 @@ static int vhcd_setup(struct usb_hcd *hcd)
 
 static int vhcd_start(struct usb_hcd *hcd)
 {
+    struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
+
     pr_info("Start hcd\n");
-    /* TODO: Start hcd with correct status. */
+
+    priv->rh_state = RH_RUNNING;
+    hcd->state = HC_STATE_RUNNING;
+
     return 0;
 }
 
@@ -129,6 +174,40 @@ static inline void hub_descriptor(struct usb_hub_descriptor *desc)
     desc->u.hs.DeviceRemovable[1] = 0xff;
 }
 
+static inline void hub_status(struct usb_hub_status *status)
+{
+    memset(status, 0, sizeof(struct usb_hub_status));
+
+    /* Local power supply good, No over-current condition currently
+     * exists */
+    status->wHubStatus = 0;
+    /* No change has occurred to Local Power Status, No change has
+     * occurred to the Over-Current Status. */
+    status->wHubChange = 0;
+}
+
+
+static inline int set_port_feature(struct usb_hcd *hcd, u16 feat)
+{
+    int error = 0;
+    struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
+
+    switch (feat) {
+        case USB_PORT_FEAT_POWER:
+            /* The port is powered on. */
+            priv->port_status.wPortStatus |= USB_PORT_STAT_POWER;
+            set_link_state(priv);
+            break;
+        default:
+            /* Invalid port feature */
+            pr_info("SetPortFeature %04x fail\n", feat);
+            error = -EPIPE;
+            break;
+    }
+
+    return error;
+}
+
 int vhcd_hub_control(struct usb_hcd *hcd,
                      u16 typeReq,
                      u16 wValue,
@@ -140,20 +219,22 @@ int vhcd_hub_control(struct usb_hcd *hcd,
     struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
     unsigned long flags;
 
-    pr_info("hub ctl\n");
-
     if (!HCD_HW_ACCESSIBLE(hcd))
         return -ETIMEDOUT;
 
     spin_lock_irqsave(&priv->lock, flags);
     switch (typeReq) {
     case GetHubDescriptor:
-        pr_debug("GetHubDescriptor\n");
+        pr_info("hub_control/GetHubDescriptor\n");
         hub_descriptor((struct usb_hub_descriptor *) buf);
         break;
     case GetHubStatus:
-        pr_debug("GetHubStatus\n");
-        /* TODO */
+        pr_info("hub_control/GetHubStatus\n");
+        hub_status((struct usb_hub_status *) buf);
+        break;
+    case SetPortFeature:
+        pr_info("hub_control/SetPortFeature\n");
+        ret = set_port_feature(hcd, wValue);
         break;
     default:
         pr_info("hub control req%04x v%04x i%04x l%d\n", typeReq, wValue,
