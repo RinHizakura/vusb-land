@@ -64,6 +64,9 @@ static void set_link_state(struct vhcd_hcd_priv *priv)
             priv->port_status.wPortChange |= USB_PORT_STAT_C_CONNECTION;
 
         priv->active = 1;
+    } else {
+        priv->port_status.wPortStatus = 0;
+        priv->port_status.wPortChange = 0;
     }
 }
 
@@ -186,6 +189,12 @@ static inline void hub_status(struct usb_hub_status *status)
     status->wHubChange = 0;
 }
 
+static inline void port_status(struct vhcd_hcd_priv *priv, struct usb_port_status *status)
+{
+    status->wPortStatus = priv->port_status.wPortStatus;
+    status->wPortChange = priv->port_status.wPortChange;
+}
+
 
 static inline int set_port_feature(struct usb_hcd *hcd, u16 feat)
 {
@@ -201,6 +210,31 @@ static inline int set_port_feature(struct usb_hcd *hcd, u16 feat)
         default:
             /* Invalid port feature */
             pr_info("SetPortFeature %04x fail\n", feat);
+            error = -EPIPE;
+            break;
+    }
+
+    return error;
+}
+
+static inline int clear_port_feature(struct usb_hcd *hcd, u16 feat)
+{
+    int error = 0;
+    struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
+
+    switch (feat) {
+        case USB_PORT_FEAT_POWER:
+            /* The port is powered off. */
+            priv->port_status.wPortStatus &= ~USB_PORT_STAT_POWER;
+            set_link_state(priv);
+            break;
+        case USB_PORT_FEAT_C_CONNECTION:
+            priv->port_status.wPortChange &= ~USB_PORT_STAT_C_CONNECTION;
+            set_link_state(priv);
+            break;
+        default:
+            /* Invalid port feature */
+            pr_info("ClearPortFeature %04x fail\n", feat);
             error = -EPIPE;
             break;
     }
@@ -235,6 +269,18 @@ int vhcd_hub_control(struct usb_hcd *hcd,
     case SetPortFeature:
         pr_info("hub_control/SetPortFeature\n");
         ret = set_port_feature(hcd, wValue);
+        break;
+    case GetPortStatus:
+        pr_info("hub_control/GetPortStatus\n");
+        /* The port number(wIndex) should always be 1 as we simulate
+         * an one port hub. */
+        if (wIndex != 1)
+            ret = -EPIPE;
+        port_status(priv, (struct usb_port_status *) buf);
+        break;
+    case ClearPortFeature:
+        pr_info("hub_control/ClearPortFeature\n");
+        ret = clear_port_feature(hcd, wValue);
         break;
     default:
         pr_info("hub control req%04x v%04x i%04x l%d\n", typeReq, wValue,
