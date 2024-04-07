@@ -9,11 +9,7 @@
 
 #define DEV_NAME "vhcd"
 
-enum roothub_state {
-    RH_RESET,
-    RH_SUSPENDED,
-    RH_RUNNING
-};
+enum roothub_state { RH_RESET, RH_SUSPENDED, RH_RUNNING };
 
 /* This is the sturcture which will be referenced by usb_hcd->hcd_priv
  * as private data */
@@ -36,20 +32,20 @@ static inline struct vhcd_hcd_priv *hcd_to_priv(struct usb_hcd *hcd)
     return (struct vhcd_hcd_priv *) (hcd->hcd_priv);
 }
 
-static inline void hcd_priv_init(struct vhcd_hcd_priv *priv, struct vhcd_data *data)
+static inline void hcd_priv_init(struct vhcd_hcd_priv *priv,
+                                 struct vhcd_data *data)
 {
     spin_lock_init(&priv->lock);
     priv->data = data;
     priv->rh_state = RH_RESET;
-    priv->port_status = (struct usb_port_status) {
+    priv->port_status = (struct usb_port_status){
         .wPortStatus = 0,
         .wPortChange = 0,
     };
     priv->active = 0;
 }
 
-static void set_link_state(struct vhcd_hcd_priv *priv)
-    __must_hold(&priv->lock)
+static void set_link_state(struct vhcd_hcd_priv *priv) __must_hold(&priv->lock)
 {
     /* Record status and active, so we can compare the changes for them. */
     struct usb_port_status port_status_old = priv->port_status;
@@ -189,7 +185,8 @@ static inline void hub_status(struct usb_hub_status *status)
     status->wHubChange = 0;
 }
 
-static inline void port_status(struct vhcd_hcd_priv *priv, struct usb_port_status *status)
+static inline void port_status(struct vhcd_hcd_priv *priv,
+                               struct usb_port_status *status)
 {
     status->wPortStatus = priv->port_status.wPortStatus;
     status->wPortChange = priv->port_status.wPortChange;
@@ -202,16 +199,23 @@ static inline int set_port_feature(struct usb_hcd *hcd, u16 feat)
     struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
 
     switch (feat) {
-        case USB_PORT_FEAT_POWER:
-            /* The port is powered on. */
-            priv->port_status.wPortStatus |= USB_PORT_STAT_POWER;
-            set_link_state(priv);
+    case USB_PORT_FEAT_POWER:
+        /* The port is powered on. */
+        priv->port_status.wPortStatus |= USB_PORT_STAT_POWER;
+        set_link_state(priv);
+        break;
+    case USB_PORT_FEAT_RESET:
+        /* The port should only be reset under connecting */
+        if (!(priv->port_status.wPortStatus & USB_PORT_STAT_CONNECTION))
             break;
-        default:
-            /* Invalid port feature */
-            pr_info("SetPortFeature %04x fail\n", feat);
-            error = -EPIPE;
-            break;
+        priv->port_status.wPortStatus |= USB_PORT_STAT_RESET;
+        set_link_state(priv);
+        break;
+    default:
+        /* Invalid port feature */
+        pr_info("SetPortFeature %04x fail\n", feat);
+        error = -EPIPE;
+        break;
     }
 
     return error;
@@ -223,20 +227,20 @@ static inline int clear_port_feature(struct usb_hcd *hcd, u16 feat)
     struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
 
     switch (feat) {
-        case USB_PORT_FEAT_POWER:
-            /* The port is powered off. */
-            priv->port_status.wPortStatus &= ~USB_PORT_STAT_POWER;
-            set_link_state(priv);
-            break;
-        case USB_PORT_FEAT_C_CONNECTION:
-            priv->port_status.wPortChange &= ~USB_PORT_STAT_C_CONNECTION;
-            set_link_state(priv);
-            break;
-        default:
-            /* Invalid port feature */
-            pr_info("ClearPortFeature %04x fail\n", feat);
-            error = -EPIPE;
-            break;
+    case USB_PORT_FEAT_POWER:
+        /* The port is powered off. */
+        priv->port_status.wPortStatus &= ~USB_PORT_STAT_POWER;
+        set_link_state(priv);
+        break;
+    case USB_PORT_FEAT_C_CONNECTION:
+        priv->port_status.wPortChange &= ~USB_PORT_STAT_C_CONNECTION;
+        set_link_state(priv);
+        break;
+    default:
+        /* Invalid port feature */
+        pr_info("ClearPortFeature %04x fail\n", feat);
+        error = -EPIPE;
+        break;
     }
 
     return error;
