@@ -139,10 +139,41 @@ int vhcd_h_get_frame(struct usb_hcd *hcd)
     return 0;
 }
 
+#define PORT_C_MASK                                          \
+    (USB_PORT_STAT_C_CONNECTION | USB_PORT_STAT_C_ENABLE |   \
+     USB_PORT_STAT_C_SUSPEND | USB_PORT_STAT_C_OVERCURRENT | \
+     USB_PORT_STAT_C_RESET)
+
+#define HUB_PORTS_NUM 1
+
 int vhcd_hub_status(struct usb_hcd *hcd, char *buf)
 {
+    int port;
+    /* Here default ret to the valid bytes of buf */
+    int ret = (HUB_PORTS_NUM + 8) / 8;
+    int status = 0;
+    unsigned long flags;
+    struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
+
     pr_info("hub status\n");
-    return 0;
+
+    if (!HCD_HW_ACCESSIBLE(hcd))
+        return 0;
+
+    memset(buf, 0, ret);
+
+    spin_lock_irqsave(&priv->lock, flags);
+    if ((priv->port_status.wPortChange & PORT_C_MASK) != 0) {
+        /* The port 0 has status change. Note that ports are
+         * 1-indexed from the USB core pointer of view. */
+        status = 1;
+        port = 0;
+        *buf = ((port + 1) << 1);
+    }
+
+    spin_unlock_irqrestore(&priv->lock, flags);
+
+    return status ? ret : 0;
 }
 
 static inline void hub_descriptor(struct usb_hub_descriptor *desc)
@@ -155,7 +186,7 @@ static inline void hub_descriptor(struct usb_hub_descriptor *desc)
     /* Descriptor Type: hub */
     desc->bDescriptorType = USB_DT_HUB;
     /* Number of downstream facing ports that this hub supports */
-    desc->bNbrPorts = 1;
+    desc->bNbrPorts = HUB_PORTS_NUM;
     /* All ports power control at once */
     desc->wHubCharacteristics |= cpu_to_le16(HUB_CHAR_COMMON_LPSM);
     /* All ports Over-Current reporting */
@@ -200,11 +231,13 @@ static inline int set_port_feature(struct usb_hcd *hcd, u16 feat)
 
     switch (feat) {
     case USB_PORT_FEAT_POWER:
+        pr_info("SetPortFeature POWER\n");
         /* The port is powered on. */
         priv->port_status.wPortStatus |= USB_PORT_STAT_POWER;
         set_link_state(priv);
         break;
     case USB_PORT_FEAT_RESET:
+        pr_info("SetPortFeature RESET\n");
         /* The port should only be reset under connecting */
         if (!(priv->port_status.wPortStatus & USB_PORT_STAT_CONNECTION))
             break;
@@ -228,11 +261,13 @@ static inline int clear_port_feature(struct usb_hcd *hcd, u16 feat)
 
     switch (feat) {
     case USB_PORT_FEAT_POWER:
+        pr_info("ClearPortFeature POWER\n");
         /* The port is powered off. */
         priv->port_status.wPortStatus &= ~USB_PORT_STAT_POWER;
         set_link_state(priv);
         break;
     case USB_PORT_FEAT_C_CONNECTION:
+        pr_info("ClearPortFeature C_CONN\n");
         priv->port_status.wPortChange &= ~USB_PORT_STAT_C_CONNECTION;
         set_link_state(priv);
         break;
