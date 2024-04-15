@@ -19,6 +19,8 @@ struct vhcd_hcd_priv {
 
     enum roothub_state rh_state;
     struct usb_port_status port_status;
+    unsigned long re_timeout;
+
     int active;
 };
 
@@ -216,9 +218,19 @@ static inline void hub_status(struct usb_hub_status *status)
     status->wHubChange = 0;
 }
 
-static inline void port_status(struct vhcd_hcd_priv *priv,
-                               struct usb_port_status *status)
+static inline void get_port_status(struct vhcd_hcd_priv *priv,
+                                   struct usb_port_status *status)
 {
+    /* Since the usbcore will poll the port status to finish reset.
+     * Here we simulate reset process by waiting a few time and
+     * updating the port status. */
+    if ((priv->port_status.wPortStatus & USB_PORT_STAT_RESET) &&
+        time_after_eq(jiffies, priv->re_timeout)) {
+        priv->port_status.wPortChange |= USB_PORT_STAT_C_RESET;
+        priv->port_status.wPortStatus &= ~USB_PORT_STAT_RESET;
+    }
+    set_link_state(priv);
+
     status->wPortStatus = priv->port_status.wPortStatus;
     status->wPortChange = priv->port_status.wPortChange;
 }
@@ -242,6 +254,9 @@ static inline int set_port_feature(struct usb_hcd *hcd, u16 feat)
         if (!(priv->port_status.wPortStatus & USB_PORT_STAT_CONNECTION))
             break;
         priv->port_status.wPortStatus |= USB_PORT_STAT_RESET;
+
+        /* TDRSTR = 50ms */
+        priv->re_timeout = jiffies + msecs_to_jiffies(50);
         set_link_state(priv);
         break;
     default:
@@ -315,7 +330,7 @@ int vhcd_hub_control(struct usb_hcd *hcd,
          * an one port hub. */
         if (wIndex != 1)
             ret = -EPIPE;
-        port_status(priv, (struct usb_port_status *) buf);
+        get_port_status(priv, (struct usb_port_status *) buf);
         break;
     case ClearPortFeature:
         pr_info("hub_control/ClearPortFeature\n");
