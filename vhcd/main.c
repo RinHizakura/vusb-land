@@ -275,6 +275,9 @@ static inline int clear_port_feature(struct usb_hcd *hcd, u16 feat)
     struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
 
     switch (feat) {
+    case USB_PORT_FEAT_ENABLE:
+        priv->port_status.wPortStatus &= ~USB_PORT_STAT_ENABLE;
+        break;
     case USB_PORT_FEAT_POWER:
         pr_info("ClearPortFeature POWER\n");
         /* The port is powered off. */
