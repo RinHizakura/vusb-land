@@ -289,6 +289,11 @@ static inline int clear_port_feature(struct usb_hcd *hcd, u16 feat)
         priv->port_status.wPortChange &= ~USB_PORT_STAT_C_CONNECTION;
         set_link_state(priv);
         break;
+    case USB_PORT_FEAT_C_RESET:
+        pr_info("ClearPortFeature C_RESET\n");
+        priv->port_status.wPortChange &= ~USB_PORT_STAT_C_RESET;
+        set_link_state(priv);
+        break;
     default:
         /* Invalid port feature */
         pr_info("ClearPortFeature %04x fail\n", feat);
