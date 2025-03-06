@@ -1,4 +1,4 @@
-#define pr_fmt(fmt) "vhcd:" fmt
+#define pr_fmt(fmt) "vusb:" fmt
 
 #include <linux/device.h>
 #include <linux/module.h>
@@ -7,7 +7,7 @@
 #include <linux/usb.h>
 #include <linux/usb/hcd.h>
 
-#define DEV_NAME "vhcd"
+#define DEV_NAME "vusb"
 
 enum roothub_state { RH_RESET, RH_SUSPENDED, RH_RUNNING };
 
@@ -16,12 +16,12 @@ enum roothub_state { RH_RESET, RH_SUSPENDED, RH_RUNNING };
  * platform_device->dev.platform_data, which is registered by
  * platform_device_add_data(). */
 struct virt {
-    struct vhcd_hcd_priv *hs_hcd_priv;
+    struct vhcd_priv *hs_hcd_priv;
 };
 
 /* This is the sturcture which will be referenced by usb_hcd->hcd_priv
  * as private data */
-struct vhcd_hcd_priv {
+struct vhcd_priv {
     struct virt *virt;
     spinlock_t lock;
 
@@ -32,17 +32,17 @@ struct vhcd_hcd_priv {
     int active;
 };
 
-static inline struct usb_hcd *priv_to_hcd(struct vhcd_hcd_priv *hcd_priv)
+static inline struct usb_hcd *priv_to_hcd(struct vhcd_priv *hcd_priv)
 {
     return container_of((void *) hcd_priv, struct usb_hcd, hcd_priv);
 }
 
-static inline struct vhcd_hcd_priv *hcd_to_priv(struct usb_hcd *hcd)
+static inline struct vhcd_priv *hcd_to_priv(struct usb_hcd *hcd)
 {
-    return (struct vhcd_hcd_priv *) (hcd->hcd_priv);
+    return (struct vhcd_priv *) (hcd->hcd_priv);
 }
 
-static inline void hcd_priv_init(struct vhcd_hcd_priv *priv,
+static inline void hcd_priv_init(struct vhcd_priv *priv,
                                  struct virt *virt)
 {
     spin_lock_init(&priv->lock);
@@ -55,7 +55,7 @@ static inline void hcd_priv_init(struct vhcd_hcd_priv *priv,
     priv->active = 0;
 }
 
-static void set_link_state(struct vhcd_hcd_priv *priv) __must_hold(&priv->lock)
+static void set_link_state(struct vhcd_priv *priv) __must_hold(&priv->lock)
 {
     /* Record status and active, so we can compare the changes for them. */
     struct usb_port_status port_status_old = priv->port_status;
@@ -98,7 +98,7 @@ static int vhcd_setup(struct usb_hcd *hcd)
     virt = *((void **) dev_get_platdata(hcd->self.controller));
     hcd->self.sg_tablesize = ~0;
 
-    virt->hs_hcd_priv = (struct vhcd_hcd_priv *) (hcd->hcd_priv);
+    virt->hs_hcd_priv = (struct vhcd_priv *) (hcd->hcd_priv);
     hcd_priv_init(virt->hs_hcd_priv, virt);
 
     hcd->speed = HCD_USB2;
@@ -109,7 +109,7 @@ static int vhcd_setup(struct usb_hcd *hcd)
 
 static int vhcd_start(struct usb_hcd *hcd)
 {
-    struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
+    struct vhcd_priv *priv = hcd_to_priv(hcd);
 
     pr_info("Start hcd\n");
 
@@ -156,7 +156,7 @@ int vhcd_hub_status(struct usb_hcd *hcd, char *buf)
     int ret = (HUB_PORTS_NUM + 8) / 8;
     int status = 0;
     unsigned long flags;
-    struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
+    struct vhcd_priv *priv = hcd_to_priv(hcd);
 
     pr_info("hub status\n");
 
@@ -219,7 +219,7 @@ static inline void hub_status(struct usb_hub_status *status)
     status->wHubChange = 0;
 }
 
-static inline void get_port_status(struct vhcd_hcd_priv *priv,
+static inline void get_port_status(struct vhcd_priv *priv,
                                    struct usb_port_status *status)
 {
     /* Since the usbcore will poll the port status to finish reset.
@@ -240,7 +240,7 @@ static inline void get_port_status(struct vhcd_hcd_priv *priv,
 static inline int set_port_feature(struct usb_hcd *hcd, u16 feat)
 {
     int error = 0;
-    struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
+    struct vhcd_priv *priv = hcd_to_priv(hcd);
 
     switch (feat) {
     case USB_PORT_FEAT_POWER:
@@ -273,7 +273,7 @@ static inline int set_port_feature(struct usb_hcd *hcd, u16 feat)
 static inline int clear_port_feature(struct usb_hcd *hcd, u16 feat)
 {
     int error = 0;
-    struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
+    struct vhcd_priv *priv = hcd_to_priv(hcd);
 
     switch (feat) {
     case USB_PORT_FEAT_ENABLE:
@@ -313,7 +313,7 @@ int vhcd_hub_control(struct usb_hcd *hcd,
                      u16 wLength)
 {
     int ret = 0;
-    struct vhcd_hcd_priv *priv = hcd_to_priv(hcd);
+    struct vhcd_priv *priv = hcd_to_priv(hcd);
     unsigned long flags;
 
     if (!HCD_HW_ACCESSIBLE(hcd))
@@ -392,7 +392,7 @@ int vhcd_free_streams(struct usb_hcd *hcd,
 static struct hc_driver vhcd_hc_driver = {
     .description = DEV_NAME,
     .product_desc = "vhcd host controller",
-    .hcd_priv_size = sizeof(struct vhcd_hcd_priv),
+    .hcd_priv_size = sizeof(struct vhcd_priv),
 
     .reset = vhcd_setup,
     .start = vhcd_start,
