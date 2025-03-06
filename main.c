@@ -472,7 +472,7 @@ static struct platform_driver vhcd_driver = {
         },
 };
 
-static int __init hcd_init(void)
+static int __init vusb_init(void)
 {
     struct virt *virt = NULL;
     int ret;
@@ -498,7 +498,6 @@ static int __init hcd_init(void)
     if (ret < 0)
         goto err_register_hcd_driver;
 
-    pr_info("Initialize vhcd = %d\n", ret);
     return ret;
 
 err_register_hcd_driver:
@@ -510,18 +509,17 @@ err_alloc_pdata:
 err_register_hcd_dev:
     return ret;
 }
-module_init(hcd_init);
+module_init(vusb_init);
 
-static void __exit hcd_exit(void)
+static void __exit vusb_exit(void)
 {
     struct virt *virt = get_platdata(&vhcd_pdev);
     platform_device_unregister(&vhcd_pdev);
     kfree(virt);
     platform_driver_unregister(&vhcd_driver);
-    pr_info("Exit vhcd\n");
 }
-module_exit(hcd_exit);
+module_exit(vusb_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("RinHizakura");
-MODULE_DESCRIPTION("The virtual USB platform device and its driver");
+MODULE_DESCRIPTION("The virtual USB platform");
