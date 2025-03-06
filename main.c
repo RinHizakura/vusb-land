@@ -16,6 +16,7 @@ enum roothub_state { RH_RESET, RH_SUSPENDED, RH_RUNNING };
  * platform_device->dev.platform_data, which is registered by
  * platform_device_add_data(). */
 struct virt {
+    bool pullup;
     struct vhcd_priv *hs_hcd_priv;
 };
 
@@ -42,8 +43,7 @@ static inline struct vhcd_priv *hcd_to_priv(struct usb_hcd *hcd)
     return (struct vhcd_priv *) (hcd->hcd_priv);
 }
 
-static inline void hcd_priv_init(struct vhcd_priv *priv,
-                                 struct virt *virt)
+static inline void hcd_priv_init(struct vhcd_priv *priv, struct virt *virt)
 {
     spin_lock_init(&priv->lock);
     priv->virt = virt;
@@ -58,18 +58,27 @@ static inline void hcd_priv_init(struct vhcd_priv *priv,
 static void set_link_state(struct vhcd_priv *priv) __must_hold(&priv->lock)
 {
     /* Record status and active, so we can compare the changes for them. */
+    struct virt *virt = priv->virt;
     struct usb_port_status port_status_old = priv->port_status;
     int active_old = priv->active;
 
     if (priv->port_status.wPortStatus & USB_PORT_STAT_POWER) {
-        /* A device is present on this port */
-        priv->port_status.wPortStatus |= USB_PORT_STAT_CONNECTION;
+        if (!virt->pullup) {
+            priv->port_status.wPortStatus &=
+                ~(USB_PORT_STAT_CONNECTION | USB_PORT_STAT_ENABLE);
 
-        /* The port status change from disconnect to connect. */
-        if (!(port_status_old.wPortStatus & USB_PORT_STAT_CONNECTION))
-            priv->port_status.wPortChange |= USB_PORT_STAT_C_CONNECTION;
+            if (port_status_old.wPortStatus & USB_PORT_STAT_CONNECTION)
+                priv->port_status.wPortChange |= USB_PORT_STAT_C_CONNECTION;
+        } else {
+            /* A device is present on this port */
+            priv->port_status.wPortStatus |= USB_PORT_STAT_CONNECTION;
 
-        priv->active = 1;
+            /* The port status change from disconnect to connect. */
+            if (!(port_status_old.wPortStatus & USB_PORT_STAT_CONNECTION))
+                priv->port_status.wPortChange |= USB_PORT_STAT_C_CONNECTION;
+
+            priv->active = 1;
+        }
     } else {
         priv->port_status.wPortStatus = 0;
         priv->port_status.wPortChange = 0;
