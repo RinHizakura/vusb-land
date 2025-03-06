@@ -11,11 +11,19 @@
 
 enum roothub_state { RH_RESET, RH_SUSPENDED, RH_RUNNING };
 
+/* This is the structure which is used to emulate the state shared betwen
+ * HCD and UDC. It will be referenced by
+ * platform_device->dev.platform_data, which is registered by
+ * platform_device_add_data(). */
+struct virt {
+    struct vhcd_hcd_priv *hs_hcd_priv;
+};
+
 /* This is the sturcture which will be referenced by usb_hcd->hcd_priv
  * as private data */
 struct vhcd_hcd_priv {
+    struct virt *virt;
     spinlock_t lock;
-    struct vhcd_data *data;
 
     enum roothub_state rh_state;
     struct usb_port_status port_status;
@@ -35,10 +43,10 @@ static inline struct vhcd_hcd_priv *hcd_to_priv(struct usb_hcd *hcd)
 }
 
 static inline void hcd_priv_init(struct vhcd_hcd_priv *priv,
-                                 struct vhcd_data *data)
+                                 struct virt *virt)
 {
     spin_lock_init(&priv->lock);
-    priv->data = data;
+    priv->virt = virt;
     priv->rh_state = RH_RESET;
     priv->port_status = (struct usb_port_status){
         .wPortStatus = 0,
@@ -68,14 +76,7 @@ static void set_link_state(struct vhcd_hcd_priv *priv) __must_hold(&priv->lock)
     }
 }
 
-/* This is the structure which will be referenced by
- * platform_device->dev.platform_data, which is registered by
- * platform_device_add_data(). */
-struct vhcd_data {
-    struct vhcd_hcd_priv *hs_hcd_priv;
-};
-
-static inline struct vhcd_data *get_platdata(struct platform_device *pdev)
+static inline struct virt *get_platdata(struct platform_device *pdev)
 {
     return *((void **) dev_get_platdata(&pdev->dev));
 }
@@ -90,15 +91,15 @@ static struct platform_device vhcd_pdev = {
 
 static int vhcd_setup(struct usb_hcd *hcd)
 {
-    struct vhcd_data *data;
+    struct virt *virt;
 
     pr_info("Setup hcd\n");
 
-    data = *((void **) dev_get_platdata(hcd->self.controller));
+    virt = *((void **) dev_get_platdata(hcd->self.controller));
     hcd->self.sg_tablesize = ~0;
 
-    data->hs_hcd_priv = (struct vhcd_hcd_priv *) (hcd->hcd_priv);
-    hcd_priv_init(data->hs_hcd_priv, data);
+    virt->hs_hcd_priv = (struct vhcd_hcd_priv *) (hcd->hcd_priv);
+    hcd_priv_init(virt->hs_hcd_priv, virt);
 
     hcd->speed = HCD_USB2;
     hcd->self.root_hub->speed = USB_SPEED_HIGH;
@@ -413,7 +414,7 @@ static struct hc_driver vhcd_hc_driver = {
 
 static int vhcd_probe(struct platform_device *pdev)
 {
-    struct vhcd_data *data;
+    struct virt *virt;
     struct usb_hcd *hs_hcd;
     int ret;
 
@@ -436,8 +437,8 @@ static int vhcd_probe(struct platform_device *pdev)
         /* If usb_add_hcd() return error because ->reset() success but ->start()
          * fail, this relationship could be set incorrectly. The driver needs to
          * reset it. */
-        data = get_platdata(pdev);
-        data->hs_hcd_priv = NULL;
+        virt = get_platdata(pdev);
+        virt->hs_hcd_priv = NULL;
         return ret;
     }
 
@@ -446,18 +447,18 @@ static int vhcd_probe(struct platform_device *pdev)
 
 static int vhcd_remove(struct platform_device *pdev)
 {
-    struct vhcd_data *data;
+    struct virt *virt;
     pr_info("Remove vhcd\n");
 
-    data = get_platdata(pdev);
+    virt = get_platdata(pdev);
 
     /* Shutdown usb_hcd by reverseing what we do at usb_add_hcd().
      * This will trigger ->stop()/vhcd_stop which is a must-needed
      * callback. */
-    usb_remove_hcd(priv_to_hcd(data->hs_hcd_priv));
-    usb_put_hcd(priv_to_hcd(data->hs_hcd_priv));
+    usb_remove_hcd(priv_to_hcd(virt->hs_hcd_priv));
+    usb_put_hcd(priv_to_hcd(virt->hs_hcd_priv));
 
-    data->hs_hcd_priv = NULL;
+    virt->hs_hcd_priv = NULL;
 
     return 0;
 }
@@ -473,7 +474,7 @@ static struct platform_driver vhcd_driver = {
 
 static int __init hcd_init(void)
 {
-    struct vhcd_data *data = NULL;
+    struct virt *virt = NULL;
     int ret;
 
     if (usb_disabled())
@@ -483,12 +484,12 @@ static int __init hcd_init(void)
     if (ret < 0)
         goto err_register_hcd_dev;
 
-    data = kzalloc(sizeof(struct vhcd_data), GFP_KERNEL);
-    if (!data) {
+    virt = kzalloc(sizeof(struct virt), GFP_KERNEL);
+    if (!virt) {
         ret = -ENOMEM;
         goto err_alloc_pdata;
     }
-    ret = platform_device_add_data(&vhcd_pdev, &data, sizeof(void *));
+    ret = platform_device_add_data(&vhcd_pdev, &virt, sizeof(void *));
     if (ret) {
         goto err_add_pdata;
     }
@@ -502,7 +503,7 @@ static int __init hcd_init(void)
 
 err_register_hcd_driver:
 err_add_pdata:
-    kfree(data);
+    kfree(virt);
 err_alloc_pdata:
     platform_device_unregister(&vhcd_pdev);
 
@@ -513,9 +514,9 @@ module_init(hcd_init);
 
 static void __exit hcd_exit(void)
 {
-    struct vhcd_data *data = get_platdata(&vhcd_pdev);
+    struct virt *virt = get_platdata(&vhcd_pdev);
     platform_device_unregister(&vhcd_pdev);
-    kfree(data);
+    kfree(virt);
     platform_driver_unregister(&vhcd_driver);
     pr_info("Exit vhcd\n");
 }
