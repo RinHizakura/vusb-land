@@ -2,13 +2,14 @@
 
 #include <linux/device.h>
 #include <linux/module.h>
-#include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/usb.h>
 #include "common.h"
 
 extern struct platform_device vhcd_pdev;
 extern struct platform_driver vhcd_driver;
+extern struct platform_device vudc_pdev;
+extern struct platform_driver vudc_driver;
 
 static int __init vusb_init(void)
 {

@@ -1,6 +1,6 @@
 MODULENAME := vhcd
 obj-m += $(MODULENAME).o
-$(MODULENAME)-y += main.o hcd.o
+$(MODULENAME)-y += main.o hcd.o udc.o
 
 KERNELDIR ?= /lib/modules/`uname -r`/build
 PWD       := $(shell pwd)

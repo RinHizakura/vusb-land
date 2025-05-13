@@ -1,7 +1,10 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#define DEV_NAME "vusb"
+#include <linux/platform_device.h>
+
+#define HCD_DEV_NAME "vhcd"
+#define UDC_DEV_NAME "vudc"
 
 #ifdef DEBUG
 #define INFO(...) pr_info(__VA_ARGS__)
