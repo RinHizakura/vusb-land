@@ -23,26 +23,45 @@ static int __init vusb_init(void)
     if (ret < 0)
         goto err_register_hcd_dev;
 
+    ret = platform_device_register(&vudc_pdev);
+    if (ret < 0)
+        goto err_register_udc_dev;
+
     virt = kzalloc(sizeof(struct virt), GFP_KERNEL);
     if (!virt) {
         ret = -ENOMEM;
         goto err_alloc_pdata;
     }
+
     ret = platform_device_add_data(&vhcd_pdev, &virt, sizeof(void *));
-    if (ret) {
+    if (ret)
         goto err_add_pdata;
-    }
+
+    ret = platform_device_add_data(&vudc_pdev, &virt, sizeof(void *));
+    if (ret)
+        goto err_add_pdata;
 
     ret = platform_driver_register(&vhcd_driver);
     if (ret < 0)
         goto err_register_hcd_driver;
 
+    ret = platform_driver_register(&vudc_driver);
+    if (ret < 0)
+        goto err_register_udc_driver;
+
     return ret;
 
+err_register_udc_driver:
+    platform_driver_unregister(&vhcd_driver);
+
 err_register_hcd_driver:
+
 err_add_pdata:
     kfree(virt);
 err_alloc_pdata:
+    platform_device_unregister(&vudc_pdev);
+
+err_register_udc_dev:
     platform_device_unregister(&vhcd_pdev);
 
 err_register_hcd_dev:
@@ -54,8 +73,10 @@ static void __exit vusb_exit(void)
 {
     struct virt *virt = get_platdata(&vhcd_pdev);
     platform_device_unregister(&vhcd_pdev);
+    platform_device_unregister(&vudc_pdev);
     kfree(virt);
     platform_driver_unregister(&vhcd_driver);
+    platform_driver_unregister(&vudc_driver);
 }
 module_exit(vusb_exit);
 
