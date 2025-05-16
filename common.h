@@ -2,6 +2,7 @@
 #define COMMON_H
 
 #include <linux/platform_device.h>
+#include <linux/usb/gadget.h>
 
 #define HCD_DEV_NAME "vhcd"
 #define UDC_DEV_NAME "vudc"
@@ -22,7 +23,11 @@ static inline struct virt *get_platdata(struct platform_device *pdev)
  * platform_device->dev.platform_data, which is registered by
  * platform_device_add_data(). */
 struct virt {
+    /* For UDC side */
     bool pullup;
+    struct usb_gadget gadget;
+
+    /* For HCD side */
     struct vhcd_priv *hs_hcd_priv;
 };
 
