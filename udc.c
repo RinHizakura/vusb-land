@@ -2,10 +2,12 @@
 
 #include "common.h"
 
+static const char udc_name[] = "vudc";
+
 static void vudc_pdev_dummy_release(struct device *dev) {}
 
 struct platform_device vudc_pdev = {
-    .name = UDC_DEV_NAME,
+    .name = udc_name,
     .id = PLATFORM_DEVID_NONE,
     .dev.release = vudc_pdev_dummy_release,
 };
@@ -41,7 +43,7 @@ static int vudc_probe(struct platform_device *pdev)
 
     // Simulate as an USB 2.0 device
     virt->gadget.ops = &vudc_gadget_ops;
-    virt->gadget.name = UDC_DEV_NAME;
+    virt->gadget.name = udc_name;
     virt->gadget.max_speed = USB_SPEED_HIGH;
     virt->gadget.dev.parent = &pdev->dev;
 
@@ -77,6 +79,6 @@ struct platform_driver vudc_driver = {
     .remove_new = vudc_remove,
     .driver =
         {
-            .name = UDC_DEV_NAME,
+            .name = udc_name,
         },
 };

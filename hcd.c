@@ -4,6 +4,8 @@
 #include <linux/usb/hcd.h>
 #include "common.h"
 
+static const char hcd_name[] = "vhcd";
+
 enum roothub_state { RH_RESET, RH_SUSPENDED, RH_RUNNING };
 
 
@@ -75,7 +77,7 @@ static void set_link_state(struct vhcd_priv *priv) __must_hold(&priv->lock)
 static void vhcd_pdev_dummy_release(struct device *dev) {}
 
 struct platform_device vhcd_pdev = {
-    .name = HCD_DEV_NAME,
+    .name = hcd_name,
     .id = PLATFORM_DEVID_NONE,
     .dev.release = vhcd_pdev_dummy_release,
 };
@@ -381,7 +383,7 @@ int vhcd_free_streams(struct usb_hcd *hcd,
 }
 
 static struct hc_driver vhcd_hc_driver = {
-    .description = HCD_DEV_NAME,
+    .description = hcd_name,
     .product_desc = "vhcd host controller",
     .hcd_priv_size = sizeof(struct vhcd_priv),
 
@@ -459,6 +461,6 @@ struct platform_driver vhcd_driver = {
     .remove = vhcd_remove,
     .driver =
         {
-            .name = HCD_DEV_NAME,
+            .name = hcd_name,
         },
 };
