@@ -15,6 +15,10 @@ static inline struct virt *get_platdata(struct platform_device *pdev)
     return *((void **) dev_get_platdata(&pdev->dev));
 }
 
+struct virt_ep {
+    struct usb_ep ep;
+};
+
 /* This is the structure which is used to emulate the state shared betwen
  * HCD and UDC. It will be referenced by
  * platform_device->dev.platform_data, which is registered by
@@ -22,6 +26,7 @@ static inline struct virt *get_platdata(struct platform_device *pdev)
 struct virt {
     /* For UDC side */
     bool pullup;
+    struct virt_ep ep;
     struct usb_gadget gadget;
 
     /* For HCD side */
