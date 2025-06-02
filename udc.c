@@ -135,7 +135,9 @@ static ssize_t function_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(function);
 
-static const struct usb_ep_caps usb_ep_cap0 =
+/* EP0 is a control endpoint, and should be the endpoint that support
+ * bidirection. */
+static const struct usb_ep_caps usb_ep0_cap =
     USB_EP_CAPS(USB_EP_CAPS_TYPE_CONTROL, USB_EP_CAPS_DIR_ALL);
 
 static void vudc_init_virt_ep(struct virt *virt)
@@ -145,14 +147,13 @@ static void vudc_init_virt_ep(struct virt *virt)
 
     INIT_LIST_HEAD(&virt->gadget.ep_list);
 
+    /* Initialize EP0 */
     usb_ep->name = "ep0";
-    usb_ep->caps = usb_ep_cap0;
+    usb_ep->caps = usb_ep0_cap;
     usb_ep->ops = &virt_ep_ops;
     list_add_tail(&usb_ep->ep_list, &virt->gadget.ep_list);
-
     usb_ep_set_maxpacket_limit(usb_ep, ~0);
     usb_ep->max_streams = 16;
-
     virt->gadget.ep0 = usb_ep;
 }
 
