@@ -138,7 +138,7 @@ static DEVICE_ATTR_RO(function);
 static const struct usb_ep_caps usb_ep_cap0 =
     USB_EP_CAPS(USB_EP_CAPS_TYPE_CONTROL, USB_EP_CAPS_DIR_ALL);
 
-static void init_virt_hw(struct virt *virt)
+static void vudc_init_virt_ep(struct virt *virt)
 {
     struct virt_ep *virt_ep = &virt->ep;
     struct usb_ep *usb_ep = &virt_ep->ep;
@@ -154,7 +154,6 @@ static void init_virt_hw(struct virt *virt)
     usb_ep->max_streams = 16;
 
     virt->gadget.ep0 = usb_ep;
-    list_del_init(&usb_ep->ep_list);
 }
 
 static int vudc_probe(struct platform_device *pdev)
@@ -171,7 +170,7 @@ static int vudc_probe(struct platform_device *pdev)
     virt->gadget.name = udc_name;
     virt->gadget.max_speed = USB_SPEED_HIGH;
     virt->gadget.dev.parent = &pdev->dev;
-    init_virt_hw(virt);
+    vudc_init_virt_ep(virt);
 
     ret = usb_add_gadget_udc(&pdev->dev, &virt->gadget);
     if (ret < 0)
