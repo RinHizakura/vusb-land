@@ -117,10 +117,18 @@ static int vudc_udc_stop(struct usb_gadget *g)
 
 
 
-static void vudc_set_speed(struct usb_gadget *_gadget,
+static void vudc_set_speed(struct usb_gadget *gadget,
                            enum usb_device_speed speed)
 {
-    INFO("UDC set_speed");
+    struct virt *virt = container_of(&gadget->dev, struct virt, gadget.dev);
+
+    /* We expect the speed is USB_SPEED_HIGH(= 3) here, so the
+     * implemention just simply designed on the assumption. */
+    INFO("UDC set_speed %d", speed);
+
+    gadget->speed = speed;
+    /* TODO: how to decide the maxpacket number? */
+    virt->ep.ep.maxpacket = 64;
 }
 
 static void vudc_udc_async_callbacks(struct usb_gadget *_gadget, bool enable)
