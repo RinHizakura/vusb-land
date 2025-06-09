@@ -15,22 +15,26 @@ struct platform_device vudc_pdev = {
 static int virt_enable(struct usb_ep *_ep,
                        const struct usb_endpoint_descriptor *desc)
 {
+    INFO("EP enable");
     return 0;
 }
 
 static int virt_disable(struct usb_ep *_ep)
 {
+    INFO("EP disable");
     return 0;
 }
 
 static struct usb_request *virt_alloc_request(struct usb_ep *_ep,
                                               gfp_t mem_flags)
 {
+    INFO("EP alloc request");
     return NULL;
 }
 
 static void virt_free_request(struct usb_ep *_ep, struct usb_request *_req)
 {
+    INFO("EP free request");
     return;
 }
 
@@ -38,21 +42,25 @@ static int virt_queue(struct usb_ep *_ep,
                       struct usb_request *_req,
                       gfp_t mem_flags)
 {
+    INFO("EP queue");
     return 0;
 }
 
 static int virt_dequeue(struct usb_ep *_ep, struct usb_request *_req)
 {
+    INFO("EP dequeue");
     return 0;
 }
 
 static int virt_set_halt(struct usb_ep *_ep, int value)
 {
+    INFO("EP set_halt");
     return 0;
 }
 
 static int virt_set_wedge(struct usb_ep *_ep)
 {
+    INFO("EP set_wedge");
     return 0;
 }
 
@@ -72,32 +80,38 @@ static const struct usb_ep_ops virt_ep_ops = {
 
 static int vudc_get_frame(struct usb_gadget *_gadget)
 {
+    INFO("UDC get frame");
     return 0;
 }
 
 static int vudc_wakeup(struct usb_gadget *_gadget)
 {
+    INFO("UDC wakeup");
     return 0;
 }
 
 static int vudc_set_selfpowered(struct usb_gadget *_gadget, int value)
 {
+    INFO("UDC set selfpowered");
     return 0;
 }
 
 static int vudc_pullup(struct usb_gadget *_gadget, int value)
 {
+    INFO("UDC pullup");
     return 0;
 }
 
 static int vudc_udc_start(struct usb_gadget *g,
                           struct usb_gadget_driver *driver)
 {
+    INFO("UDC start");
     return 0;
 }
 
 static int vudc_udc_stop(struct usb_gadget *g)
 {
+    INFO("UDC stop");
     return 0;
 }
 
@@ -106,11 +120,12 @@ static int vudc_udc_stop(struct usb_gadget *g)
 static void vudc_set_speed(struct usb_gadget *_gadget,
                            enum usb_device_speed speed)
 {
-    INFO("udc_set_speed");
+    INFO("UDC set_speed");
 }
 
 static void vudc_udc_async_callbacks(struct usb_gadget *_gadget, bool enable)
 {
+    INFO("UDC async callbacks");
     return;
 }
 

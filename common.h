@@ -4,6 +4,8 @@
 #include <linux/platform_device.h>
 #include <linux/usb/gadget.h>
 
+#define DEBUG
+
 #ifdef DEBUG
 #define INFO(...) pr_info(__VA_ARGS__)
 #else
