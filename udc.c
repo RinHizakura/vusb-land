@@ -2,6 +2,10 @@
 
 #include "common.h"
 
+struct virt_request {
+    struct usb_request req;
+};
+
 static const char udc_name[] = "vudc";
 
 static void vudc_pdev_dummy_release(struct device *dev) {}
@@ -30,11 +34,21 @@ static int virt_disable(struct usb_ep *_ep)
     return 0;
 }
 
-static struct usb_request *virt_alloc_request(struct usb_ep *_ep,
+static struct usb_request *virt_alloc_request(struct usb_ep *ep,
                                               gfp_t mem_flags)
 {
+    struct virt_request *virt_req;
+
     INFO("EP alloc request");
-    return NULL;
+
+    if (!ep)
+        return NULL;
+
+    virt_req = kzalloc(sizeof(struct virt_request), mem_flags);
+    if (!virt_req)
+        return NULL;
+
+    return &virt_req->req;
 }
 
 static void virt_free_request(struct usb_ep *_ep, struct usb_request *_req)
