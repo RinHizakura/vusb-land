@@ -12,6 +12,11 @@ struct platform_device vudc_pdev = {
     .dev.release = vudc_pdev_dummy_release,
 };
 
+static inline struct virt *get_gadget_dev_data(struct device *dev)
+{
+    return container_of(dev, struct virt, gadget.dev);
+}
+
 static int virt_enable(struct usb_ep *_ep,
                        const struct usb_endpoint_descriptor *desc)
 {
@@ -120,7 +125,7 @@ static int vudc_udc_stop(struct usb_gadget *g)
 static void vudc_set_speed(struct usb_gadget *gadget,
                            enum usb_device_speed speed)
 {
-    struct virt *virt = container_of(&gadget->dev, struct virt, gadget.dev);
+    struct virt *virt = get_gadget_dev_data(&gadget->dev);
 
     /* We expect the speed is USB_SPEED_HIGH(= 3) here, so the
      * implemention just simply designed on the assumption. */
@@ -152,7 +157,7 @@ static ssize_t function_show(struct device *dev,
                              struct device_attribute *attr,
                              char *buf)
 {
-    struct virt *virt = container_of(dev, struct virt, gadget.dev);
+    struct virt *virt = get_gadget_dev_data(dev);
 
     return 0;
 }
