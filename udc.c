@@ -125,6 +125,11 @@ static int vudc_udc_start(struct usb_gadget *g,
                           struct usb_gadget_driver *driver)
 {
     INFO("UDC start");
+
+    /* USB high speed is the only supported speed. */
+    if (g->speed != USB_SPEED_HIGH)
+        return -EINVAL;
+
     return 0;
 }
 
@@ -166,16 +171,6 @@ static const struct usb_gadget_ops vudc_gadget_ops = {
     .udc_set_speed = vudc_set_speed,
     .udc_async_callbacks = vudc_udc_async_callbacks,
 };
-
-static ssize_t function_show(struct device *dev,
-                             struct device_attribute *attr,
-                             char *buf)
-{
-    struct virt *virt = get_gadget_dev_data(dev);
-
-    return 0;
-}
-static DEVICE_ATTR_RO(function);
 
 /* EP0 is a control endpoint, and should be the endpoint that support
  * bidirection. */
@@ -219,14 +214,10 @@ static int vudc_probe(struct platform_device *pdev)
     if (ret < 0)
         goto err_add_gadget_udc;
 
-    ret = device_create_file(&virt->gadget.dev, &dev_attr_function);
-    if (ret < 0)
-        goto err_dev;
     platform_set_drvdata(pdev, virt);
 
     return 0;
 
-err_dev:
     usb_del_gadget_udc(&virt->gadget);
 err_add_gadget_udc:
     return ret;
@@ -238,7 +229,6 @@ static void vudc_remove(struct platform_device *pdev)
 
     INFO("Remove vudc\n");
 
-    device_remove_file(&virt->gadget.dev, &dev_attr_function);
     usb_del_gadget_udc(&virt->gadget);
 }
 
