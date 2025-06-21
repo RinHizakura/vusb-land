@@ -26,6 +26,8 @@ struct virt_ep {
  * platform_device->dev.platform_data, which is registered by
  * platform_device_add_data(). */
 struct virt {
+    spinlock_t lock;
+
     /* For UDC side */
     bool pullup;
     struct virt_ep ep;

@@ -13,7 +13,6 @@ enum roothub_state { RH_RESET, RH_SUSPENDED, RH_RUNNING };
  * as private data */
 struct vhcd_priv {
     struct virt *virt;
-    spinlock_t lock;
 
     enum roothub_state rh_state;
     struct usb_port_status port_status;
@@ -34,7 +33,6 @@ static inline struct vhcd_priv *hcd_to_priv(struct usb_hcd *hcd)
 
 static inline void hcd_priv_init(struct vhcd_priv *priv, struct virt *virt)
 {
-    spin_lock_init(&priv->lock);
     priv->virt = virt;
     priv->rh_state = RH_RESET;
     priv->port_status = (struct usb_port_status){
@@ -44,7 +42,7 @@ static inline void hcd_priv_init(struct vhcd_priv *priv, struct virt *virt)
     priv->active = 0;
 }
 
-static void set_link_state(struct vhcd_priv *priv) __must_hold(&priv->lock)
+static void set_link_state(struct vhcd_priv *priv) __must_hold(&virt->lock)
 {
     /* Record status and active, so we can compare the changes for them. */
     struct virt *virt = priv->virt;
@@ -103,9 +101,11 @@ static int vhcd_setup(struct usb_hcd *hcd)
 static int vhcd_start(struct usb_hcd *hcd)
 {
     struct vhcd_priv *priv = hcd_to_priv(hcd);
+    struct virt *virt = priv->virt;
 
     INFO("Start hcd\n");
 
+    spin_lock_init(&virt->lock);
     priv->rh_state = RH_RUNNING;
     hcd->state = HC_STATE_RUNNING;
 
@@ -150,6 +150,7 @@ int vhcd_hub_status(struct usb_hcd *hcd, char *buf)
     int status = 0;
     unsigned long flags;
     struct vhcd_priv *priv = hcd_to_priv(hcd);
+    struct virt *virt = priv->virt;
 
     INFO("hub status\n");
 
@@ -158,7 +159,7 @@ int vhcd_hub_status(struct usb_hcd *hcd, char *buf)
 
     memset(buf, 0, ret);
 
-    spin_lock_irqsave(&priv->lock, flags);
+    spin_lock_irqsave(&virt->lock, flags);
     if ((priv->port_status.wPortChange & PORT_C_MASK) != 0) {
         /* The port 0 has status change. Note that ports are
          * 1-indexed from the USB core pointer of view. */
@@ -167,7 +168,7 @@ int vhcd_hub_status(struct usb_hcd *hcd, char *buf)
         *buf = ((port + 1) << 1);
     }
 
-    spin_unlock_irqrestore(&priv->lock, flags);
+    spin_unlock_irqrestore(&virt->lock, flags);
 
     return status ? ret : 0;
 }
@@ -307,12 +308,13 @@ int vhcd_hub_control(struct usb_hcd *hcd,
 {
     int ret = 0;
     struct vhcd_priv *priv = hcd_to_priv(hcd);
+    struct virt *virt = priv->virt;
     unsigned long flags;
 
     if (!HCD_HW_ACCESSIBLE(hcd))
         return -ETIMEDOUT;
 
-    spin_lock_irqsave(&priv->lock, flags);
+    spin_lock_irqsave(&virt->lock, flags);
     switch (typeReq) {
     case GetHubDescriptor:
         INFO("hub_control/GetHubDescriptor\n");
@@ -344,7 +346,7 @@ int vhcd_hub_control(struct usb_hcd *hcd,
         ret = -EPIPE;
         break;
     }
-    spin_unlock_irqrestore(&priv->lock, flags);
+    spin_unlock_irqrestore(&virt->lock, flags);
 
     return ret;
 }
