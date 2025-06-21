@@ -21,6 +21,14 @@ static inline struct virt *get_gadget_dev_data(struct device *dev)
     return container_of(dev, struct virt, gadget.dev);
 }
 
+static inline struct vhcd *gadget_to_vhcd(struct usb_gadget *gadget)
+{
+    struct virt *virt = container_of(gadget, struct virt, gadget);
+    /* We expect dum->gadget.speed is USB_SPEED_HIGH, but don't
+     * enforce any check here. */
+    return virt->hs_hcd;
+}
+
 static int virt_enable(struct usb_ep *_ep,
                        const struct usb_endpoint_descriptor *desc)
 {
@@ -124,6 +132,9 @@ static int vudc_pullup(struct usb_gadget *_gadget, int value)
 static int vudc_udc_start(struct usb_gadget *g,
                           struct usb_gadget_driver *driver)
 {
+    struct vhcd *vhcd = gadget_to_vhcd(g);
+    struct virt *virt = vhcd->virt;
+
     INFO("UDC start");
 
     /* USB high speed is the only supported speed. */

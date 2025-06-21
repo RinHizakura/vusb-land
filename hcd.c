@@ -1,74 +1,57 @@
 #define pr_fmt(fmt) "vusb:" fmt
 
-#include <linux/usb.h>
-#include <linux/usb/hcd.h>
 #include "common.h"
 
 static const char hcd_name[] = "vhcd";
 
-enum roothub_state { RH_RESET, RH_SUSPENDED, RH_RUNNING };
-
-
-/* This is the sturcture which will be referenced by usb_hcd->hcd_priv
- * as private data */
-struct vhcd_priv {
-    struct virt *virt;
-
-    enum roothub_state rh_state;
-    struct usb_port_status port_status;
-    unsigned long re_timeout;
-
-    int active;
-};
-
-static inline struct usb_hcd *priv_to_hcd(struct vhcd_priv *hcd_priv)
+static inline struct usb_hcd *vhcd_to_hcd(struct vhcd *vhcd)
 {
-    return container_of((void *) hcd_priv, struct usb_hcd, hcd_priv);
+    return container_of((void *) vhcd, struct usb_hcd, hcd_priv);
 }
 
-static inline struct vhcd_priv *hcd_to_priv(struct usb_hcd *hcd)
+static inline struct vhcd *hcd_to_vhcd(struct usb_hcd *hcd)
 {
-    return (struct vhcd_priv *) (hcd->hcd_priv);
+    return (struct vhcd *) (hcd->hcd_priv);
 }
 
-static inline void hcd_priv_init(struct vhcd_priv *priv, struct virt *virt)
+static inline void vhcd_init(struct vhcd *vhcd, struct virt *virt)
 {
-    priv->virt = virt;
-    priv->rh_state = RH_RESET;
-    priv->port_status = (struct usb_port_status){
+    vhcd->virt = virt;
+    vhcd->rh_state = RH_RESET;
+    vhcd->port_status = (struct usb_port_status){
         .wPortStatus = 0,
         .wPortChange = 0,
     };
-    priv->active = 0;
+    vhcd->active = 0;
 }
 
-static void set_link_state(struct vhcd_priv *priv) __must_hold(&virt->lock)
+static void set_link_state(struct vhcd *vhcd) __must_hold(&virt->lock)
 {
     /* Record status and active, so we can compare the changes for them. */
-    struct virt *virt = priv->virt;
-    struct usb_port_status port_status_old = priv->port_status;
-    int active_old = priv->active;
+    struct virt *virt = vhcd->virt;
+    struct usb_port_status port_status_old = vhcd->port_status;
+    int active_old = vhcd->active;
 
-    if (priv->port_status.wPortStatus & USB_PORT_STAT_POWER) {
+    if (vhcd->port_status.wPortStatus & USB_PORT_STAT_POWER) {
         if (!virt->pullup) {
-            priv->port_status.wPortStatus &=
+            vhcd->port_status.wPortStatus &=
                 ~(USB_PORT_STAT_CONNECTION | USB_PORT_STAT_ENABLE);
 
             if (port_status_old.wPortStatus & USB_PORT_STAT_CONNECTION)
-                priv->port_status.wPortChange |= USB_PORT_STAT_C_CONNECTION;
+                vhcd->port_status.wPortChange |= USB_PORT_STAT_C_CONNECTION;
         } else {
             /* A device is present on this port */
-            priv->port_status.wPortStatus |= USB_PORT_STAT_CONNECTION;
+            vhcd->port_status.wPortStatus |= USB_PORT_STAT_CONNECTION;
 
             /* The port status change from disconnect to connect. */
             if (!(port_status_old.wPortStatus & USB_PORT_STAT_CONNECTION))
-                priv->port_status.wPortChange |= USB_PORT_STAT_C_CONNECTION;
+                vhcd->port_status.wPortChange |= USB_PORT_STAT_C_CONNECTION;
 
-            priv->active = 1;
+            vhcd->active = 1;
         }
     } else {
-        priv->port_status.wPortStatus = 0;
-        priv->port_status.wPortChange = 0;
+        vhcd->port_status.wPortStatus = 0;
+        vhcd->port_status.wPortChange = 0;
     }
 }
 
@@ -89,8 +72,8 @@ static int vhcd_setup(struct usb_hcd *hcd)
     virt = *((void **) dev_get_platdata(hcd->self.controller));
     hcd->self.sg_tablesize = ~0;
 
-    virt->hs_hcd_priv = (struct vhcd_priv *) (hcd->hcd_priv);
-    hcd_priv_init(virt->hs_hcd_priv, virt);
+    virt->hs_hcd = (struct vhcd *) (hcd->hcd_priv);
+    vhcd_init(virt->hs_hcd, virt);
 
     hcd->speed = HCD_USB2;
     hcd->self.root_hub->speed = USB_SPEED_HIGH;
@@ -100,13 +83,13 @@ static int vhcd_setup(struct usb_hcd *hcd)
 
 static int vhcd_start(struct usb_hcd *hcd)
 {
-    struct vhcd_priv *priv = hcd_to_priv(hcd);
-    struct virt *virt = priv->virt;
+    struct vhcd *vhcd = hcd_to_vhcd(hcd);
+    struct virt *virt = vhcd->virt;
 
     INFO("Start hcd\n");
 
     spin_lock_init(&virt->lock);
-    priv->rh_state = RH_RUNNING;
+    vhcd->rh_state = RH_RUNNING;
     hcd->state = HC_STATE_RUNNING;
 
     return 0;
@@ -149,8 +132,8 @@ int vhcd_hub_status(struct usb_hcd *hcd, char *buf)
     int ret = (HUB_PORTS_NUM + 8) / 8;
     int status = 0;
     unsigned long flags;
-    struct vhcd_priv *priv = hcd_to_priv(hcd);
-    struct virt *virt = priv->virt;
+    struct vhcd *vhcd = hcd_to_vhcd(hcd);
+    struct virt *virt = vhcd->virt;
 
     INFO("hub status\n");
 
@@ -160,7 +143,7 @@ int vhcd_hub_status(struct usb_hcd *hcd, char *buf)
     memset(buf, 0, ret);
 
     spin_lock_irqsave(&virt->lock, flags);
-    if ((priv->port_status.wPortChange & PORT_C_MASK) != 0) {
+    if ((vhcd->port_status.wPortChange & PORT_C_MASK) != 0) {
         /* The port 0 has status change. Note that ports are
          * 1-indexed from the USB core pointer of view. */
         status = 1;
@@ -213,46 +196,46 @@ static inline void hub_status(struct usb_hub_status *status)
     status->wHubChange = 0;
 }
 
-static inline void get_port_status(struct vhcd_priv *priv,
+static inline void get_port_status(struct vhcd *vhcd,
                                    struct usb_port_status *status)
 {
     /* Since the usbcore will poll the port status to finish reset.
      * Here we simulate reset process by waiting a few time and
      * updating the port status. */
-    if ((priv->port_status.wPortStatus & USB_PORT_STAT_RESET) &&
-        time_after_eq(jiffies, priv->re_timeout)) {
-        priv->port_status.wPortChange |= USB_PORT_STAT_C_RESET;
-        priv->port_status.wPortStatus &= ~USB_PORT_STAT_RESET;
+    if ((vhcd->port_status.wPortStatus & USB_PORT_STAT_RESET) &&
+        time_after_eq(jiffies, vhcd->re_timeout)) {
+        vhcd->port_status.wPortChange |= USB_PORT_STAT_C_RESET;
+        vhcd->port_status.wPortStatus &= ~USB_PORT_STAT_RESET;
     }
-    set_link_state(priv);
+    set_link_state(vhcd);
 
-    status->wPortStatus = priv->port_status.wPortStatus;
-    status->wPortChange = priv->port_status.wPortChange;
+    status->wPortStatus = vhcd->port_status.wPortStatus;
+    status->wPortChange = vhcd->port_status.wPortChange;
 }
 
 
 static inline int set_port_feature(struct usb_hcd *hcd, u16 feat)
 {
     int error = 0;
-    struct vhcd_priv *priv = hcd_to_priv(hcd);
+    struct vhcd *vhcd = hcd_to_vhcd(hcd);
 
     switch (feat) {
     case USB_PORT_FEAT_POWER:
         INFO("SetPortFeature POWER\n");
         /* The port is powered on. */
-        priv->port_status.wPortStatus |= USB_PORT_STAT_POWER;
-        set_link_state(priv);
+        vhcd->port_status.wPortStatus |= USB_PORT_STAT_POWER;
+        set_link_state(vhcd);
         break;
     case USB_PORT_FEAT_RESET:
         INFO("SetPortFeature RESET\n");
         /* The port should only be reset under connecting */
-        if (!(priv->port_status.wPortStatus & USB_PORT_STAT_CONNECTION))
+        if (!(vhcd->port_status.wPortStatus & USB_PORT_STAT_CONNECTION))
             break;
-        priv->port_status.wPortStatus |= USB_PORT_STAT_RESET;
+        vhcd->port_status.wPortStatus |= USB_PORT_STAT_RESET;
 
         /* TDRSTR = 50ms */
-        priv->re_timeout = jiffies + msecs_to_jiffies(50);
-        set_link_state(priv);
+        vhcd->re_timeout = jiffies + msecs_to_jiffies(50);
+        set_link_state(vhcd);
         break;
     default:
         /* Invalid port feature */
@@ -267,27 +250,27 @@ static inline int set_port_feature(struct usb_hcd *hcd, u16 feat)
 static inline int clear_port_feature(struct usb_hcd *hcd, u16 feat)
 {
     int error = 0;
-    struct vhcd_priv *priv = hcd_to_priv(hcd);
+    struct vhcd *vhcd = hcd_to_vhcd(hcd);
 
     switch (feat) {
     case USB_PORT_FEAT_ENABLE:
-        priv->port_status.wPortStatus &= ~USB_PORT_STAT_ENABLE;
+        vhcd->port_status.wPortStatus &= ~USB_PORT_STAT_ENABLE;
         break;
     case USB_PORT_FEAT_POWER:
         INFO("ClearPortFeature POWER\n");
         /* The port is powered off. */
-        priv->port_status.wPortStatus &= ~USB_PORT_STAT_POWER;
-        set_link_state(priv);
+        vhcd->port_status.wPortStatus &= ~USB_PORT_STAT_POWER;
+        set_link_state(vhcd);
         break;
     case USB_PORT_FEAT_C_CONNECTION:
         INFO("ClearPortFeature C_CONN\n");
-        priv->port_status.wPortChange &= ~USB_PORT_STAT_C_CONNECTION;
-        set_link_state(priv);
+        vhcd->port_status.wPortChange &= ~USB_PORT_STAT_C_CONNECTION;
+        set_link_state(vhcd);
         break;
     case USB_PORT_FEAT_C_RESET:
         INFO("ClearPortFeature C_RESET\n");
-        priv->port_status.wPortChange &= ~USB_PORT_STAT_C_RESET;
-        set_link_state(priv);
+        vhcd->port_status.wPortChange &= ~USB_PORT_STAT_C_RESET;
+        set_link_state(vhcd);
         break;
     default:
         /* Invalid port feature */
@@ -307,8 +290,8 @@ int vhcd_hub_control(struct usb_hcd *hcd,
                      u16 wLength)
 {
     int ret = 0;
-    struct vhcd_priv *priv = hcd_to_priv(hcd);
-    struct virt *virt = priv->virt;
+    struct vhcd *vhcd = hcd_to_vhcd(hcd);
+    struct virt *virt = vhcd->virt;
     unsigned long flags;
 
     if (!HCD_HW_ACCESSIBLE(hcd))
@@ -334,7 +317,7 @@ int vhcd_hub_control(struct usb_hcd *hcd,
          * an one port hub. */
         if (wIndex != 1)
             ret = -EPIPE;
-        get_port_status(priv, (struct usb_port_status *) buf);
+        get_port_status(vhcd, (struct usb_port_status *) buf);
         break;
     case ClearPortFeature:
         INFO("hub_control/ClearPortFeature\n");
@@ -387,7 +370,7 @@ int vhcd_free_streams(struct usb_hcd *hcd,
 static struct hc_driver vhcd_hc_driver = {
     .description = hcd_name,
     .product_desc = "vhcd host controller",
-    .hcd_priv_size = sizeof(struct vhcd_priv),
+    .hcd_priv_size = sizeof(struct vhcd),
 
     .reset = vhcd_setup,
     .start = vhcd_start,
@@ -433,7 +416,7 @@ static int vhcd_probe(struct platform_device *pdev)
          * fail, this relationship could be set incorrectly. The driver needs to
          * reset it. */
         virt = get_platdata(pdev);
-        virt->hs_hcd_priv = NULL;
+        virt->hs_hcd = NULL;
         return ret;
     }
 
@@ -450,10 +433,10 @@ static int vhcd_remove(struct platform_device *pdev)
     /* Shutdown usb_hcd by reverseing what we do at usb_add_hcd().
      * This will trigger ->stop()/vhcd_stop which is a must-needed
      * callback. */
-    usb_remove_hcd(priv_to_hcd(virt->hs_hcd_priv));
-    usb_put_hcd(priv_to_hcd(virt->hs_hcd_priv));
+    usb_remove_hcd(vhcd_to_hcd(virt->hs_hcd));
+    usb_put_hcd(vhcd_to_hcd(virt->hs_hcd));
 
-    virt->hs_hcd_priv = NULL;
+    virt->hs_hcd = NULL;
 
     return 0;
 }

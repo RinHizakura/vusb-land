@@ -2,7 +2,9 @@
 #define COMMON_H
 
 #include <linux/platform_device.h>
+#include <linux/usb.h>
 #include <linux/usb/gadget.h>
+#include <linux/usb/hcd.h>
 
 #define DEBUG
 
@@ -34,7 +36,21 @@ struct virt {
     struct usb_gadget gadget;
 
     /* For HCD side */
-    struct vhcd_priv *hs_hcd_priv;
+    struct vhcd *hs_hcd;
+};
+
+enum roothub_state { RH_RESET, RH_SUSPENDED, RH_RUNNING };
+
+/* This is the sturcture which will be referenced by usb_hcd->hcd_priv
+ * as private data */
+struct vhcd {
+    struct virt *virt;
+
+    enum roothub_state rh_state;
+    struct usb_port_status port_status;
+    unsigned long re_timeout;
+
+    int active;
 };
 
 #endif
